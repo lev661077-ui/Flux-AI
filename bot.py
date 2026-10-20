@@ -4,41 +4,40 @@ from aiohttp import web
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import Command
 from aiogram.client.default import DefaultBotProperties
-from openai import AsyncOpenAI
+from google import genai
 
 # === НАСТРОЙКИ ===
 TOKEN = os.getenv("BOT_TOKEN")
-CF_ACCOUNT_ID = os.getenv("CLOUDFLARE_ACCOUNT_ID")
-CF_API_TOKEN = os.getenv("CLOUDFLARE_API_TOKEN")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
 dp = Dispatcher()
 
-# Инициализация клиента Cloudflare (через библиотеку OpenAI)
-client = AsyncOpenAI(
-    base_url=f"https://api.cloudflare.com/client/v4/accounts/{CF_ACCOUNT_ID}/ai/v1",
-    api_key=CF_API_TOKEN,
-)
+# Клиент Gemini
+client = genai.Client(api_key=GEMINI_API_KEY)
+# Используем бесплатную модель, которая отлично пишет стихи и код
+MODEL_ID = "gemini-2.5-flash" 
 
-# Модель Cloudflare (Llama 3.1)
-MODEL_ID = "@cf/meta/llama-3.1-8b-instruct"
+SYSTEM_PROMPT = """Ты — Flux-AI, экспертный ИИ-ассистент. Твой создатель — @sigmatsch.
+Ты умеешь:
+1. Писать сложные, красивые стихи и поэзию.
+2. Решать математические задачи пошагово.
+3. Писать идеальный код на Lua (Delta Script), Python и JavaScript.
+4. Работать с алгоритмами и большими данными.
 
-SYSTEM_PROMPT = """Ты — Nexus_AI, экспертный ИИ-ассистент по программированию. Твой создатель — @sigmatsch.
-Твоя главная цель — писать идеальный код на Lua (Roblox/Delta Script), Python и JavaScript.
 ПРАВИЛА:
-1. Ты пишешь только рабочий код. Если просят скрипт для Delta Script — используй правильный API Roblox (loadstring, getgenv и т.д.).
-2. Всегда оформляй код в Markdown-блоки.
-3. Никакой воды. Только факты и код.
-4. Если тебя спрашивают, кто тебя создал, отвечай: "Меня создал @sigmatsch".
+- Отвечай развернуто и творчески, если просят стихи.
+- Для математики расписывай решение по шагам.
+- Для кода используй Markdown-блоки.
+- Если тебя спрашивают, кто тебя создал, отвечай: "Меня создал @sigmatsch".
 """
 
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     await message.answer(
-        f"Привет, я <b>Nexus_AI</b>! 🤖\n"
-        f"Я работаю на нейросети Cloudflare.\n"
-        f"Могу писать код на Lua (Delta Script), Python и JS.\n\n"
-        f"Напиши мне задачу!"
+        f"Привет, я <b>Flux-AI</b>! ⚡\n"
+        f"Я могу писать стихи, решать математику и писать код.\n\n"
+        f"Напиши мне свой вопрос!"
     )
 
 @dp.message(F.text)
@@ -46,18 +45,13 @@ async def handle_message(message: types.Message):
     await bot.send_chat_action(chat_id=message.chat.id, action="typing")
     
     try:
-        response = await client.chat.completions.create(
+        # Отправляем запрос в Gemini через новый SDK (interactions.create)
+        interaction = client.interactions.create(
             model=MODEL_ID,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": message.text}
-            ],
-            extra_headers={
-                "Authorization": f"Bearer {CF_API_TOKEN}"
-            }
+            input=f"{SYSTEM_PROMPT}\n\nПользователь: {message.text}"
         )
         
-        ai_answer = response.choices[0].message.content
+        ai_answer = interaction.output_text
         
         if len(ai_answer) > 4000:
             for i in range(0, len(ai_answer), 4000):
@@ -66,7 +60,7 @@ async def handle_message(message: types.Message):
             await message.answer(ai_answer)
             
     except Exception as e:
-        await message.answer(f"❌ Ошибка Cloudflare: {str(e)}")
+        await message.answer(f"❌ Ошибка Gemini: {str(e)}")
 
 # === ФЕЙКОВЫЙ ВЕБ-СЕРВЕР ДЛЯ RENDER ===
 async def web_server():
@@ -83,7 +77,7 @@ async def main():
     asyncio.create_task(web_server())
     await asyncio.sleep(2) 
     
-    print("🚀 Бот Nexus_AI (Cloudflare) запущен...")
+    print("🚀 Flux-AI (Gemini) запущен...")
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
